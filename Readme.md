@@ -1,4 +1,4 @@
-# FlyRank Backend Track - Week 1: Containerized Task API (PostgreSQL)
+# FlyRank Backend Track - Week 3: Containerized Task API (PostgreSQL)
 
 A production-grade RESTful Task API built with **Python 3.10+**, **FastAPI**, and **PostgreSQL**, fully containerized using **Docker** and **Docker Compose**[cite: 18]. The application features parameterized SQL query execution, automated database initialization with idempotent seeding, custom JSON error overrides, and persistent volume storage across restarts[cite: 18, 21, 24].
 
