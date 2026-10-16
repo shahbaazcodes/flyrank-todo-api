@@ -3,3 +3,10 @@ tasks.db
 .venv/
 __pycache__/
 *.db
+.env
+.DS_Store
+.venv/
+__pycache__/
+*.db
+.env
+.DS_Store
