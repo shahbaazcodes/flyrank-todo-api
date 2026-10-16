@@ -1,44 +1,45 @@
-# FlyRank Backend Track - Week 2: CRUD Task API
+# FlyRank Backend Track - Week 1: Containerized Task API (PostgreSQL)
 
-A production-grade, highly optimized RESTful To-Do List API built using **Python 3.10+** and **FastAPI**. This service implements full CRUD operations with rigorous HTTP status code semantic handling, advanced Pydantic data validation, and an optimized in-memory storage layer designed for time-complexity efficiency.
+A production-grade RESTful Task API built with **Python 3.10+**, **FastAPI**, and **PostgreSQL**, fully containerized using **Docker** and **Docker Compose**[cite: 18]. The application features parameterized SQL query execution, automated database initialization with idempotent seeding, custom JSON error overrides, and persistent volume storage across restarts[cite: 18, 21, 24].
 
 ---
 
 ## 🚀 Key Architectural Highlights
 
-*   **O(1) Constant Time Storage:** Replaced standard array-list iteration with a Python dictionary (Hash Map) data structure, dropping resource lookup, updates, and deletion times from linear O(N) down to instant O(1) efficiency regardless of scale.
-*   **Gateway Payload Sanitization:** Utilizes Pydantic `field_validator` hooks to automatically sanitize inputs, trim white spaces, and enforce business rules (e.g., rejecting blank or whitespace-only titles) before reaching application handlers.
-*   **Production Habits:** Out-of-the-box system health monitoring endpoints (`/health`) and defensive validation parsing overriding default framework responses with explicit `400 Bad Request` payloads.
-*   **Structural Pagination:** Supports data protection and bandwidth limitation via integrated `limit` and `offset` query parameters on bulk fetch requests.
+*   **Repository Layer Separation:** Implements a decoupled repository module (`db.py`) containing all database client connections and parameterized SQL queries, keeping route declarations completely storage-agnostic[cite: 20, 21].
+*   **One-Command Container Stack:** Orchestrates both the FastAPI application server and a dedicated PostgreSQL database container using Docker Compose with inter-service networking and automated volume mounting[cite: 18, 22].
+*   **Data Persistence:** Uses a named Docker volume (`taskdata`) mounted to `/var/lib/postgresql/data`, guaranteeing that database records survive full container stops and restarts[cite: 22].
+*   **Environment & Secret Security:** Decouples credentials using `.env` files and runtime environment injection (`DATABASE_URL`), ensuring zero hardcoded passwords or secrets enter Git history[cite: 21, 23].
+*   **Automated First-Run Seeding:** Executes idempotent database initialization on startup, creating the `tasks` table if missing and populating initial seed records only when the database is empty[cite: 21].
 
 ---
 
 ## 🛠️ Installation & Run Instructions
 
-Follow these commands to configure and initialize the server on your local machine:
+Start the entire application stack with a single command[cite: 18, 23]:
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-github-repo-url>
+   git clone [https://github.com/shahbaazcodes/flyrank-todo-api.git](https://github.com/shahbaazcodes/flyrank-todo-api.git)
    cd flyrank-todo-api
    ```
 
-2. **Establish and activate a virtual environment:**
+2. **Configure environment secrets:**
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
+   cp .env.example .env
    ```
 
-3. **Install application dependencies:**
+3. **Launch the container stack:**
    ```bash
-   pip install fastapi uvicorn
+   docker compose up --build
    ```
 
-4. **Boot the Uvicorn engine:**
-   ```bash
-   uvicorn main:app --reload
-   ```
-   *The server will idle live at `http://127.0.0.1:8000`.*
+The API will run live at `http://localhost:8000`[cite: 22, 23]. Interactive Swagger UI documentation is accessible at `http://localhost:8000/docs`.
+
+To stop the stack[cite: 22]:
+```bash
+docker compose down
+```
 
 ---
 
@@ -46,67 +47,75 @@ Follow these commands to configure and initialize the server on your local machi
 
 | HTTP Method | Path | Description | Success Code | Error Codes |
 | :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/` | Fetch basic API name and active entry points | `200 OK` | None |
-| **GET** | `/health` | Core DevOps system health check | `200 OK` | None |
-| **GET** | `/tasks` | Retrieve paginated slice of stored tasks (`limit`, `offset`) | `200 OK` | None |
-| **GET** | `/tasks/{id}` | Fetch a single task via O(1) direct hash matching | `200 OK` | `404 Not Found` |
-| **POST** | `/tasks` | Create a new task (Sanitizes string inputs) | `201 Created` | `400 Bad Request` |
-| **PUT** | `/tasks/{id}` | Update an existing task's title or completed status | `200 OK` | `400 Bad / 404 Missing` |
-| **DELETE** | `/tasks/{id}`| Purge a specific task entirely from the primary dictionary | `204 No Content` | `404 Not Found` |
+| **GET** | `/` | API metadata and available endpoints | `200 OK` | None |
+| **GET** | `/health` | System and PostgreSQL connectivity health check | `200 OK` | `503 Service Unavailable` |
+| **GET** | `/tasks` | List paginated tasks (`limit`, `offset`) | `200 OK` | None |
+| **GET** | `/tasks/{id}` | Retrieve details for a specific task | `200 OK` | `404 Not Found` |
+| **POST** | `/tasks` | Create a new task (Sanitizes whitespace) | `201 Created` | `400 Bad Request` |
+| **PUT** | `/tasks/{id}` | Update task title or completed status | `200 OK` | `400 Bad Request` / `404 Not Found` |
+| **DELETE** | `/tasks/{id}`| Permanently delete a task by ID | `204 No Content` | `404 Not Found` |
 
 ---
 
-## 🔍 Sample Execution Outputs (`curl -i`)
+## 🔍 Sample Execution Output (`curl -i`)
 
-### 1. Creating a Valid Task (`201 Created`)
+### 1. Fetching All Tasks (`200 OK`)
+```http
+HTTP/1.1 200 OK
+date: Fri, 16 Oct 2026 15:50:00 GMT
+server: uvicorn
+content-length: 221
+content-type: application/json
+
+[
+  {"id": 1, "title": "Complete Stage 1 of FlyRank assignment", "done": true},
+  {"id": 2, "title": "Build the Read endpoints for Stage 2", "done": false},
+  {"id": 3, "title": "Crush the technical interview later", "done": false}
+]
+```
+
+### 2. Creating a Task (`201 Created`)
 ```http
 HTTP/1.1 201 Created
-date: Fri, 17 Jul 2026 17:31:26 GMT
+date: Fri, 16 Oct 2026 15:52:10 GMT
 server: uvicorn
-content-length: 40
+content-length: 51
 content-type: application/json
 
-{"id":4,"title":"Buy milk","done":false}
+{"id": 4, "title": "Containerize stack with Postgres", "done": false}
 ```
 
-### 2. Trimming & Input Validation Failure (`400 Bad Request`)
+### 3. Database Health Check (`200 OK`)
 ```http
-HTTP/1.1 400 Bad Request
-date: Fri, 17 Jul 2026 17:32:10 GMT
+HTTP/1.1 200 OK
+date: Fri, 16 Oct 2026 15:53:00 GMT
 server: uvicorn
-content-length: 47
+content-length: 27
 content-type: application/json
 
-{"detail":"Bad Request: Title cannot be empty"}
-```
-
-### 3. Resource Deletion (`204 No Content`)
-```http
-HTTP/1.1 204 No Content
-date: Fri, 17 Jul 2026 17:33:57 GMT
-server: uvicorn
+{"status": "ok", "db": "ok"}
 ```
 
 ---
 
-## 🎨 Interactive Documentation (Swagger UI)
+## 📊 Database State (`psql`)
 
-Below is the verified interactive architecture running live on `http://localhost:8000/docs`:
+Below is the verified database table state running inside the PostgreSQL container[cite: 23, 24]:
 
-![Swagger UI Documentation Screenshot](./swagger-screenshot.jpg)
+![Database Screenshot](./db-screenshot.png)
 
 ---
 
-## ⚔️ Stage 7: AI vs Me Rematch Code Review
+## ⚔️ Stage 6: AI vs Me Rematch Code Review
 
-A high-precision prompt was fed to an AI assistant to generate a matching application architecture inside an isolated quarantine folder (`ai-version/`). Running `git diff --no-index main.py ai-version/main.py` highlighted critical structural nuances:
+A high-precision specification prompt was fed to an AI assistant to generate a matching containerized architecture inside an isolated quarantine directory (`ai-version/`)[cite: 24]. Comparing both codebases highlighted key engineering observations:
 
 ### 1. What the AI Did Better
-* **OpenAPI Application Metadata Configuration:** The AI cleanly passed metadata definitions (`title` and `version`) directly into the root `FastAPI()` constructor instantiate block. This cleanly updates the top-level headers in the interactive Swagger UI dynamically without requiring hardcoded strings in the base `GET /` router function.
+* **Compose Dependency Conditions:** The AI leveraged `depends_on` service conditions with `condition: service_healthy` on the `db` container in `compose.yaml`, delaying API startup until PostgreSQL's native healthcheck passed.
 
 ### 2. What the AI Got Wrong / Ignored
-* **Ambiguous Network Responses:** For the `DELETE` endpoint execution path, the AI leveraged an empty implicit `return` block. While FastAPI parses this into a `204`, my custom solution explicitly yields a structural `Response(status_code=status.HTTP_204_NO_CONTENT)` payload. Explicit initialization completely eliminates networking ambiguity for incoming upstream clients and API documentation generation layers.
-* **Overly Verbose Error Payloads:** The AI's custom `RequestValidationError` exception override passed raw `exc.errors()` dictionaries back to the client. In production environments, revealing dense validation stack traces can accidentally leak model/data structure internal definitions to external clients, making the hand-written crisp error messaging more secure.
+* **Hardcoded Credentials:** The AI hardcoded database credentials directly inside the `Dockerfile` `ENV` statements rather than retrieving them dynamically from `.env` via `DATABASE_URL`[cite: 21, 23, 24].
+* **Missing Persistent Volume Mounts:** The generated compose file omitted named volume mapping (`taskdata:/var/lib/postgresql/data`), causing all database records to wipe completely upon container deletion (`docker compose down`)[cite: 22, 24].
 
-### 3. What the Prompt Forgot to Specify
-* **Concurrency Idioms:** The prompt omitted specifying whether to construct synchronous or asynchronous route declarations. As a result, the AI declared all routers using `async def` blocks. Because our current in-memory dictionary data store does not use non-blocking async operations (like an external database client or file system call), standard `def` declarations are highly optimized and prevent unnecessary event-loop management overhead.
+### 3. Lessons Learned
+AI output quality scales directly with explicit specification depth[cite: 24]. Without explicitly defining secret management rules and volume persistence requirements in the prompt, AI defaults to non-persistent, hardcoded container setups[cite: 24].
