@@ -1,29 +1,50 @@
-from fastapi import FastAPI, HTTPException, status, Request
+from contextlib import asynccontextmanager
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-app = FastAPI(title="Task API", version="1.0")
+import db
 
-# Global in-memory storage (Hash Map) and atomic counter
-tasks_db = {
-    1: {"id": 1, "title": "Setup quarantined environment", "done": True},
-    2: {"id": 2, "title": "Analyze AI code choices", "done": False}
-}
-task_id_counter = 2
 
-# Input Validation Schemas
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create the table and seed on startup (safe to run on every start)."""
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="Task API", version="3.0", lifespan=lifespan)
+
+
+# --- Errors: one JSON shape, {"error": "..."}, everywhere ---
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": "Bad Request: Invalid or missing data fields"},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+
+# --- Models ---
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1)
 
     @field_validator("title")
     @classmethod
-    def validate_title(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("Title cannot be empty or whitespace only")
-        return stripped
+    def clean_title(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Title cannot consist solely of whitespace")
+        return v.strip()
+
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -31,90 +52,58 @@ class TaskUpdate(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def validate_title(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None:
-            stripped = value.strip()
-            if not stripped:
-                raise ValueError("Title cannot be empty or whitespace only")
-            return stripped
-        return value
+    def clean_title(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Title cannot be blank")
+        return v.strip() if v is not None else None
 
-# Override default 422 Unprocessable Entity with a clean 400 Bad Request
-@app.exception_handler(RequestValidationError)
-async def custom_validation_exception_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"error": "Bad Request", "details": exc.errors()}
-    )
 
+# --- Routes (no SQL here: that all lives in db.py) ---
 @app.get("/")
-async def get_meta():
-    """
-    Retrieve system metadata, API naming conventions, and structural endpoints.
-    """
-    return {
-        "name": "Task API",
-        "version": "1.0",
-        "endpoints": ["/tasks"]
-    }
+def read_root():
+    return {"name": "Task API", "version": "3.0", "endpoints": ["/tasks"]}
+
 
 @app.get("/health")
-async def health_check():
-    """
-    Execute an automated uptime check to confirm backend service status.
-    """
-    return {"status": "ok"}
+def health_check():
+    """Reports API status AND whether the database answers SELECT 1."""
+    try:
+        db.ping()
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "error", "db": "down"})
+    return {"status": "ok", "db": "ok"}
+
 
 @app.get("/tasks")
-async def list_tasks(limit: int = 10, offset: int = 0):
-    """
-    Fetch a targeted paginated slice of all current todo list entries.
-    """
-    all_tasks = list(tasks_db.values())
-    return all_tasks[offset : offset + limit]
+def get_all_tasks(limit: int = Query(10, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return db.list_tasks(limit, offset)
+
 
 @app.get("/tasks/{id}")
-async def get_task(id: int):
-    """
-    Look up details for a specific task using an optimized O(1) key identification.
-    """
-    if id not in tasks_db:
-        raise HTTPException(status_code=404, detail=f"Task {id} not found")
-    return tasks_db[id]
+def get_task_by_id(id: int):
+    task = db.get_task(id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
 
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
-async def create_task(task: TaskCreate):
-    """
-    Register a new task entry, generate a dynamic ID counter, and default state to incomplete.
-    """
-    global task_id_counter
-    task_id_counter += 1
-    new_task = {"id": task_id_counter, "title": task.title, "done": False}
-    tasks_db[task_id_counter] = new_task
-    return new_task
+def create_task(payload: TaskCreate):
+    return db.create_task(payload.title)
+
 
 @app.put("/tasks/{id}")
-async def update_task(id: int, task_data: TaskUpdate):
-    """
-    Evaluate structural changes and apply title edits or state updates to a matching task.
-    """
-    if id not in tasks_db:
-        raise HTTPException(status_code=404, detail=f"Task {id} not found")
-    
-    current_task = tasks_db[id]
-    if task_data.title is not None:
-        current_task["title"] = task_data.title
-    if task_data.done is not None:
-        current_task["done"] = task_data.done
-        
-    return current_task
+def update_task(id: int, payload: TaskUpdate):
+    if payload.title is None and payload.done is None:
+        raise HTTPException(status_code=400, detail="Bad Request: Body cannot be completely empty")
+    task = db.update_task(id, payload.title, payload.done)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
 
 @app.delete("/tasks/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(id: int):
-    """
-    Purge a targeted entry from the primary dict instantly using key matching rules.
-    """
-    if id not in tasks_db:
-        raise HTTPException(status_code=404, detail=f"Task {id} not found")
-    del tasks_db[id]
-    return
+def delete_task(id: int):
+    if not db.delete_task(id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
