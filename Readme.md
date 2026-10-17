@@ -1,121 +1,95 @@
-# FlyRank Backend Track - Week 3: Containerized Task API (PostgreSQL)
+# FlyRank Backend Track — AI Engineering Portfolio
 
-A production-grade RESTful Task API built with **Python 3.10+**, **FastAPI**, and **PostgreSQL**, fully containerized using **Docker** and **Docker Compose**[cite: 18]. The application features parameterized SQL query execution, automated database initialization with idempotent seeding, custom JSON error overrides, and persistent volume storage across restarts[cite: 18, 21, 24].
-
----
-
-## 🚀 Key Architectural Highlights
-
-*   **Repository Layer Separation:** Implements a decoupled repository module (`db.py`) containing all database client connections and parameterized SQL queries, keeping route declarations completely storage-agnostic[cite: 20, 21].
-*   **One-Command Container Stack:** Orchestrates both the FastAPI application server and a dedicated PostgreSQL database container using Docker Compose with inter-service networking and automated volume mounting[cite: 18, 22].
-*   **Data Persistence:** Uses a named Docker volume (`taskdata`) mounted to `/var/lib/postgresql/data`, guaranteeing that database records survive full container stops and restarts[cite: 22].
-*   **Environment & Secret Security:** Decouples credentials using `.env` files and runtime environment injection (`DATABASE_URL`), ensuring zero hardcoded passwords or secrets enter Git history[cite: 21, 23].
-*   **Automated First-Run Seeding:** Executes idempotent database initialization on startup, creating the `tasks` table if missing and populating initial seed records only when the database is empty[cite: 21].
+A production-grade backend repository featuring a **Containerized Task API (PostgreSQL + Docker Compose)** and a **Supabase Auth & JWT Guard Microservice (FastAPI + Pydantic v2)**[cite: 3, 18]. Built with clean architecture, decoupled repository patterns, automated database seeding, and strict JWT signature verification[cite: 3, 18, 21].
 
 ---
 
-## 🛠️ Installation & Run Instructions
+## 📁 Repository Structure
 
-Start the entire application stack with a single command[cite: 18, 23]:
+```text
+flyrank-todo-api/
+├── compose.yaml              # Docker Compose stack for Task API + Postgres[cite: 18, 22]
+├── Dockerfile                # FastAPI container build configuration[cite: 18, 22]
+├── db.py                     # PostgreSQL repository layer & query logic[cite: 20, 21]
+├── main.py                   # Task API application routes[cite: 18]
+└── supabase-auth-guard/      # Week 2: Supabase Auth & JWT Security Microservice[cite: 3]
+    ├── .env.example          # Safe environment template
+    ├── main.py               # Auth API entry point & exception overrides[cite: 3]
+    ├── swagger-screenshot.png# Verified Swagger UI execution
+    └── app/
+        ├── config.py         # Supabase client initialization
+        ├── dependencies.py   # Reusable HTTPBearer JWT Verification Guard
+        ├── router.py         # Signup, Login, Logout, & Protected routes[cite: 3]
+        └── schemas.py        # Pydantic v2 request/response models
+```
 
-1. **Clone the repository:**
+---
+
+## 🔐 Week 2: Supabase Auth & JWT Security Microservice (`/supabase-auth-guard`)
+
+An enterprise-ready authentication service delegating identity management, password hashing, and token issuance to **Supabase Auth** while enforcing stateless JWT verification via FastAPI Dependency Injection guards[cite: 3].
+
+### 🛠️ Quick Setup & Run Instructions
+
+1. **Navigate to the auth microservice directory:**
    ```bash
-   git clone [https://github.com/shahbaazcodes/flyrank-todo-api.git](https://github.com/shahbaazcodes/flyrank-todo-api.git)
-   cd flyrank-todo-api
+   cd supabase-auth-guard
    ```
 
 2. **Configure environment secrets:**
    ```bash
    cp .env.example .env
    ```
+   *Fill in your `SUPABASE_URL` and `SUPABASE_KEY` inside `.env`.*
 
-3. **Launch the container stack:**
+3. **Install dependencies & launch server:**
    ```bash
-   docker compose up --build
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install fastapi uvicorn supabase python-dotenv pydantic-settings email-validator
+   
+   uvicorn main:app --reload --port 8000
    ```
 
-The API will run live at `http://localhost:8000`[cite: 22, 23]. Interactive Swagger UI documentation is accessible at `http://localhost:8000/docs`.
-
-To stop the stack[cite: 22]:
-```bash
-docker compose down
-```
-
 ---
 
-## 📋 API Endpoints Reference
+### 📋 Authentication API Reference
 
-| HTTP Method | Path | Description | Success Code | Error Codes |
+| Method | Path | Description | Auth Required | Status Code |
 | :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/` | API metadata and available endpoints | `200 OK` | None |
-| **GET** | `/health` | System and PostgreSQL connectivity health check | `200 OK` | `503 Service Unavailable` |
-| **GET** | `/tasks` | List paginated tasks (`limit`, `offset`) | `200 OK` | None |
-| **GET** | `/tasks/{id}` | Retrieve details for a specific task | `200 OK` | `404 Not Found` |
-| **POST** | `/tasks` | Create a new task (Sanitizes whitespace) | `201 Created` | `400 Bad Request` |
-| **PUT** | `/tasks/{id}` | Update task title or completed status | `200 OK` | `400 Bad Request` / `404 Not Found` |
-| **DELETE** | `/tasks/{id}`| Permanently delete a task by ID | `204 No Content` | `404 Not Found` |
+| **POST** | `/auth/signup` | Register a new user account | None | `201 Created` / `400`[cite: 5] |
+| **POST** | `/auth/login` | Authenticate credentials & issue JWT | None | `200 OK` / `401`[cite: 5] |
+| **POST** | `/auth/logout` | Terminate session (invalidates token) | Bearer JWT | `204 No Content` / `401`[cite: 6] |
+| **GET** | `/public/info` | Publicly accessible metadata | None | `200 OK`[cite: 5] |
+| **GET** | `/protected/profile` | Read authenticated user profile details | Bearer JWT | `200 OK` / `401`[cite: 6] |
+| **GET** | `/protected/dashboard` | Secondary protected endpoint (Dependency Guard) | Bearer JWT | `200 OK` / `401`[cite: 6] |
 
 ---
 
-## 🔍 Sample Execution Output (`curl -i`)
+### 📸 Verified Swagger UI Authorization (`/docs`)
 
-### 1. Fetching All Tasks (`200 OK`)
-```http
-HTTP/1.1 200 OK
-date: Fri, 16 Oct 2026 15:50:00 GMT
-server: uvicorn
-content-length: 221
-content-type: application/json
+FastAPI's native `HTTPBearer` security scheme auto-generates the interactive **Authorize** padlock at `http://localhost:8000/docs`[cite: 7]:
 
-[
-  {"id": 1, "title": "Complete Stage 1 of FlyRank assignment", "done": true},
-  {"id": 2, "title": "Build the Read endpoints for Stage 2", "done": false},
-  {"id": 3, "title": "Crush the technical interview later", "done": false}
-]
-```
-
-### 2. Creating a Task (`201 Created`)
-```http
-HTTP/1.1 201 Created
-date: Fri, 16 Oct 2026 15:52:10 GMT
-server: uvicorn
-content-length: 51
-content-type: application/json
-
-{"id": 4, "title": "Containerize stack with Postgres", "done": false}
-```
-
-### 3. Database Health Check (`200 OK`)
-```http
-HTTP/1.1 200 OK
-date: Fri, 16 Oct 2026 15:53:00 GMT
-server: uvicorn
-content-length: 27
-content-type: application/json
-
-{"status": "ok", "db": "ok"}
-```
+![Swagger UI Bearer Auth](./supabase-auth-guard/swagger-screenshot.png)[cite: 7, 26, 27]
 
 ---
 
-## 📊 Database State (`psql`)
+## ⚔️ Stage 7: AI vs Me Code Review (Auth Architecture)
 
-Below is the verified database table state running inside the PostgreSQL container[cite: 23, 24]:
+An AI assistant was prompted to generate an equivalent authentication setup in an isolated directory[cite: 8]. Diffing the generated codebase against this implementation highlighted critical security observations[cite: 8]:
 
-![Database Screenshot](./db-screenshot.png)
+1. **Bearer Header Extraction:** The AI used raw string indexing (`header[7:]`) without checking if the `Authorization` header existed or started with `"Bearer "`, causing unhandled 500 server crashes on malformed requests[cite: 8]. This implementation utilizes FastAPI's `HTTPBearer` class to yield standard `401 Unauthorized` responses automatically.
+2. **Stateless Token Verification:** The AI decoded JWT claims locally without verifying revocation against Supabase[cite: 8]. This implementation performs direct `supabase.auth.get_user(token)` network calls, rejecting stale or logged-out sessions immediately[cite: 6].
+3. **Secret Isolation:** The AI hardcoded fallback anon keys directly in source code[cite: 8]. This implementation strictly enforces runtime injection via git-ignored `.env` files and `pydantic-settings`.
 
 ---
 
-## ⚔️ Stage 6: AI vs Me Rematch Code Review
+## 🐘 Week 1: Containerized Task API (PostgreSQL Stack)
 
-A high-precision specification prompt was fed to an AI assistant to generate a matching containerized architecture inside an isolated quarantine directory (`ai-version/`)[cite: 24]. Comparing both codebases highlighted key engineering observations:
+A RESTful Task API with parameterized SQL execution, automated database schema initialization, and persistent Docker volume storage[cite: 18, 21, 24].
 
-### 1. What the AI Did Better
-* **Compose Dependency Conditions:** The AI leveraged `depends_on` service conditions with `condition: service_healthy` on the `db` container in `compose.yaml`, delaying API startup until PostgreSQL's native healthcheck passed.
-
-### 2. What the AI Got Wrong / Ignored
-* **Hardcoded Credentials:** The AI hardcoded database credentials directly inside the `Dockerfile` `ENV` statements rather than retrieving them dynamically from `.env` via `DATABASE_URL`[cite: 21, 23, 24].
-* **Missing Persistent Volume Mounts:** The generated compose file omitted named volume mapping (`taskdata:/var/lib/postgresql/data`), causing all database records to wipe completely upon container deletion (`docker compose down`)[cite: 22, 24].
-
-### 3. Lessons Learned
-AI output quality scales directly with explicit specification depth[cite: 24]. Without explicitly defining secret management rules and volume persistence requirements in the prompt, AI defaults to non-persistent, hardcoded container setups[cite: 24].
+### Launch Stack:
+```bash
+docker compose up --build
+```
+*API runs at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs`[cite: 22, 23].*
