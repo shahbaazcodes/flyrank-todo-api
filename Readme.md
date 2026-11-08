@@ -86,7 +86,7 @@ An AI assistant was prompted to generate an equivalent authentication setup in a
 
 ## 🐘 Week 1: Containerized Task API (PostgreSQL Stack)
 
-A RESTful Task API with parameterized SQL execution, automated database schema initialization, and persistent Docker volume storage.
+A RESTful Task API with parameterized SQL execution, automated database schema initialization, and persistent Docker volume storage
 
 ### Launch Stack:
 ```bash
