@@ -1,4 +1,4 @@
-# FlyRank Backend Track — AI Engineering Portfolio
+# FlyRank Backend Track — AI Engineering Portfolio.
 
 A production-grade backend repository featuring a **Containerized Task API (PostgreSQL + Docker Compose)** and a **Supabase Auth & JWT Guard Microservice (FastAPI + Pydantic v2)**. Built with clean architecture, decoupled repository patterns, automated database seeding, and strict JWT signature verification..
 
